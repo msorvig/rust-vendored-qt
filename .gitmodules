@@ -1,0 +1,3 @@
+[submodule "qt-src/qtbase"]
+	path = qt-src/qtbase
+	url = https://code.qt.io/qt/qtbase.git
