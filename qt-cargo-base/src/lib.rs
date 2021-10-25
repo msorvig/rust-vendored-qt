@@ -57,7 +57,7 @@ pub struct QtModuleBuilder {
     module_private_features_: Vec<(String, bool)>,
     module_defines_: Vec<(String, String)>,
     module_private_defines_: Vec<(String, String)>,
-    qplatformdefs_: Vec<u8>,
+    qplatformdefs_: Option<PathBuf>,
     build_dir_: Option<PathBuf>,
     build: cc::Build,
 }
@@ -79,7 +79,7 @@ impl QtModuleBuilder {
             module_private_features_: Vec::new(),
             module_defines_: Vec::new(),
             module_private_defines_: Vec::new(),
-            qplatformdefs_: Vec::new(),
+            qplatformdefs_: Option::None,
             build_dir_: Option::None,
             build: cc::Build::new(),
         };
@@ -187,118 +187,147 @@ impl QtModuleBuilder {
             .collect()
     }
 
-    /// Creates global and module configuration files. This includes the qplatformdefs.h
-    /// header, as well as qconfig.h and qconfig_private.h. Returns the include path,
-    /// which should be passed to the compile.
-    fn create_global_config_headears(&mut self) -> PathBuf {
-        // Set the path name. The name can be anything, since we add it to the compiler include paths.
-        let default_path: PathBuf = ".".into();
-        let workspace_path = self.build_dir_.as_ref().unwrap_or(&default_path);
-        let path = workspace_path.join("buildconfig");
+    /// Writes global and module configuration files to the given path. This includes the
+    /// qplatformdefs.h header, as well as qconfig.h and qconfig_private.h.
+    fn create_config_headears<P>(&mut self, path: P)
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
+        let module_path = path.join(&self.module_name);
+        std::fs::create_dir_all(&module_path).expect("Unable to create directory");
 
-        // Write qplatformdefs.h
-        std::fs::create_dir_all(&path).expect("Unable to create directory");
-        let qplatformdefs_file_path = path.join("qplatformdefs.h");
-        fs::write(qplatformdefs_file_path, &self.qplatformdefs_)
-            .expect("Unable to write qplatformdefs file");
+        // Write qplatformdefs_p.h forwarding header.
+        QtModuleBuilder::write_forwarding_header(
+            &module_path,
+            &self
+                .qplatformdefs_
+                .as_ref()
+                .expect("qplatformdefs path is missing"),
+        );
 
-        // Write global config headers: qconfig.h and qconfig_p.h. These are written
-        // to the QtCore module, where Qt expects to find them. (TODO: is this so?)
+        // Write qconfig.h with Qt global public config and features to QtCore/qconfig.h.
+        let global_defines = QtModuleBuilder::make_define_string(&self.global_defines_);
         let global_features_defines = QtModuleBuilder::make_feature_defines(&self.global_features_);
+        let qconfig_content = format!("{}\n{}", global_features_defines, global_defines);
+        let qconfig_path = module_path.join("qconfig.h");
+        //println!("Write qconfig.h to {:?}", qconfig_path);
+        fs::write(qconfig_path, qconfig_content).expect("Unable to write file");
+
+        // Write qconfig_p.h with Qt global private config features to QtCore/private/qconfig_p.h
+        let module_private_path = module_path.join("private");
+        std::fs::create_dir_all(&module_private_path).expect("Unable to create directory");
         let global_private_features_defines =
             QtModuleBuilder::make_feature_defines(&self.global_private_features_);
-        let global_defines = QtModuleBuilder::make_define_string(&self.global_defines_);
-        let qconfig_content = format!("{}\n{}", global_features_defines, global_defines);
         let qconfig_private_content = global_private_features_defines;
-        std::fs::create_dir_all(&path.join("QtCore")).expect("Unable to create directory");
-        fs::write(path.join("QtCore/qconfig.h"), qconfig_content).expect("Unable to write file");
-        std::fs::create_dir_all(&path.join("QtCore/private")).expect("Unable to create directory");
-        fs::write(
-            path.join("QtCore/private/qconfig_p.h"),
-            qconfig_private_content,
-        )
-        .expect("Unable to write file");
+        let qconfig_p_path = module_private_path.join("qconfig_p.h");
+        //println!("Write qconfig_p.h to {:?}", qconfig_p_path);
+        fs::write(qconfig_p_path, qconfig_private_content).expect("Unable to write file");
 
-        // Write module config headers qt$module-confifg.h and _p.h. These are written to the
-        // Qt$Module directoty.
+        // Write qt$module-config.h (e.g. qtcore-config.h) with public module config
+        let module_lowercase_name = &self.module_name.to_lowercase();
+        let module_config_dir = path.join(&self.module_name);
         let module_features_defines = QtModuleBuilder::make_feature_defines(&self.module_features_);
+        let module_defines = QtModuleBuilder::make_define_string(&self.module_defines_);
+        let module_config_content = format!("{}\n{}", module_features_defines, module_defines);
+        let module_config_file_name = format!("{}-config.h", module_lowercase_name);
+        let module_config_path = module_config_dir.join(&module_config_file_name);
+        fs::create_dir_all(&module_config_dir).expect("could not create directory");
+        //println!(
+        //    "Write {} to {:?}",
+        //    &module_config_file_name, &module_config_path
+        //);
+        fs::write(module_config_path, module_config_content).expect("Unable to write file");
+
+        // Write qt$module-config_p.h (e.g. qtcore-config._på.h) with private module config
         let module_private_features_defines =
             QtModuleBuilder::make_feature_defines(&self.module_private_features_);
-        let moule_defines = QtModuleBuilder::make_define_string(&self.module_defines_);
         let moule_private_defines =
             QtModuleBuilder::make_define_string(&self.module_private_defines_);
-        let module_config_content = format!("{}\n{}", module_features_defines, moule_defines);
         let module_private_config_content = format!(
             "{}\n{}",
             module_private_features_defines, moule_private_defines
         );
-        let module_name = &self.module_name;
-        let module_lowercase_name = module_name.to_lowercase();
-
-        // Write to e.g. QtCore/qtcore-config.h
-        let module_config_dir = path.join(module_name);
-        fs::create_dir_all(&module_config_dir).expect("could not create directory");
-        fs::write(
-            module_config_dir.join(format!("{}-config.h", module_lowercase_name)),
-            module_config_content,
-        )
-        .expect("Unable to write file");
-
-        // Write to e.g. QtCore/private/qtcore-config_p.h
         let module_private_config_dir = module_config_dir.join("private");
-        fs::create_dir_all(&module_private_config_dir).expect("could not create directory");
-        fs::write(
-            module_private_config_dir.join(format!("{}-config_p.h", module_lowercase_name)),
-            module_private_config_content,
-        )
-        .expect("Unable to write file");
+        let module_private_config_file_name = format!("{}-config_p.h", module_lowercase_name);
+        let module_private_config_path =
+            module_private_config_dir.join(&module_private_config_file_name);
 
-        // Return the include path
-        path
+        fs::create_dir_all(&module_private_config_dir).expect("could not create directory");
+        //println!(
+        //    "Write {} to {:?}",
+        //    &module_private_config_file_name, &module_private_config_path
+        //);
+        fs::write(module_private_config_path, module_private_config_content)
+            .expect("Unable to write file");
+    }
+
+    /// Writes a forwarding header to destination_path. The forwarding header
+    /// file name is taken from target_header_path. The forwarding heder will
+    /// contain an "#include" statement which includes the target header.
+    /// target_header_path may be a relative path, and will be resolved against
+    /// std:::env::current_dir if so.
+    fn write_forwarding_header<'a, P, V>(destination_path: P, target_header_path: V)
+    where
+        P: AsRef<Path>,
+        V: AsRef<Path>,
+    {
+        let destination_path = destination_path.as_ref();
+        let target_header_path = target_header_path.as_ref();
+        if let Some(file_name) = target_header_path.file_name() {
+            let forwarding_header_path = destination_path.join(file_name);
+            let target_header_path = match target_header_path.is_relative() {
+                true => target_header_path.to_path_buf(),
+                false => std::env::current_dir()
+                    .unwrap()
+                    .as_path()
+                    .join(target_header_path),
+            }
+            .canonicalize()
+            .unwrap();
+            //println!("{:?} {:?}", &destination_path, target_header_path);
+            let target_header_path = pathdiff::diff_paths(target_header_path, &destination_path)
+                .expect("Unable to create fwd path");
+            //println!("{:?}", target_header_path);
+            let include_statement =
+                format!("#include \"{}\"\n", target_header_path.to_str().unwrap());
+            fs::write(forwarding_header_path, include_statement).expect("Unable to write file");
+        }
     }
 
     /// Writes forwarding headers which contain e.g. #include "../diff/path/to/real/header.h"
     /// The headers are written to the given path. Each header points back to the corrsponding
     /// header path in the headers iterable.
-    fn write_headers<'a, P, V>(path: P, headers: V)
+    fn write_forwarding_headers<'a, P, V>(path: P, headers: V)
     where
         P: AsRef<Path>,
         V: IntoIterator<Item = &'a PathBuf>,
     {
-        let path = path.as_ref();
         std::fs::create_dir_all(&path).expect("Unable to create directory");
-        for header in headers.into_iter() {
-            match header.file_name() {
-                Some(file_name) => {
-                    let forwarding_header_path = path.join(&file_name);
-                    let target_header_path =
-                        pathdiff::diff_paths(header, &path).expect("Unable to create fwd path");
-                    let include_statement =
-                        format!("#include \"{}\"", target_header_path.to_str().unwrap());
-                    fs::write(forwarding_header_path, include_statement)
-                        .expect("Unable to write file");
-                }
-                None => {}
-            }
+        for header_realative_path in headers.into_iter() {
+            QtModuleBuilder::write_forwarding_header(&path, header_realative_path);
         }
     }
 
-    /// Creates forwarding headers (like syncqt does). Qt source code expects to include
-    /// e.g. <QtCore/qglobal.h> in addition to plain <qglobal.h>, so we need to create
-    // an extra set of headers which forwards to the real headers.
-    fn create_module_forwarding_headers(&mut self) -> PathBuf {
-        let path = PathBuf::from("module_includes").join(&self.module_name);
-        QtModuleBuilder::write_headers(&path, &self.module_headers);
-        path
+    /// Creates syncqt-style forwarding headers. Qt source code expects to be able to
+    /// include e.g. <QtCore/qglobal.h> in addition to plain <qglobal.h>, so we need to
+    /// create an extra set of headers which forwards to the actual headers.
+    fn create_forwarding_headers<P>(&mut self, path: P)
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref().join(&self.module_name);
+        //println!("Write forwarding headers  to {:?}", path);
+        QtModuleBuilder::write_forwarding_headers(path, &self.module_headers);
     }
 
     /// Creates private forwarding headers, so that e.g <QtCore/private/foo_p.h> type inclues work.
-    fn create_private_forwarding_headers(&mut self) -> PathBuf {
-        let path = PathBuf::from("module_includes")
-            .join(&self.module_name)
-            .join("private");
-        QtModuleBuilder::write_headers(&path, &self.module_headers);
-        path
+    fn create_private_forwarding_headers<P>(&mut self, path: P)
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref().join(&self.module_name).join("private");
+        QtModuleBuilder::write_forwarding_headers(&path, &self.module_headers);
     }
 
     /// Adds Qt global features. These will be written to qconfig.h
@@ -385,10 +414,9 @@ impl QtModuleBuilder {
         self
     }
 
-    /// Sets the content of the qplatformsefs file
-    pub fn qplatformdefs<T: AsRef<Path>>(&mut self, platformdefs_file: T) -> &mut QtModuleBuilder {
-        self.qplatformdefs_ =
-            fs::read(platformdefs_file.as_ref()).expect("unable to read platformdefs file");
+    /// Sets the qplatformsefs file location.
+    pub fn qplatformdefs<T: AsRef<Path>>(&mut self, platformdefs_path: T) -> &mut QtModuleBuilder {
+        self.qplatformdefs_ = Some(platformdefs_path.as_ref().to_path_buf());
         self
     }
 
@@ -437,6 +465,31 @@ impl QtModuleBuilder {
         features::global_defines()
     }
 
+    /// Configures the builder to target linux
+    pub fn configure_for_linux_target<P>(&mut self, qt_source: P) -> &mut QtModuleBuilder
+    where
+        P: AsRef<Path>,
+    {
+        self.qplatformdefs(
+            qt_source
+                .as_ref()
+                .join("qtbase/mkspecs/linux-clang/qplatformdefs.h"),
+        );
+
+        self.global_defines(features::global_defines());
+        self.global_features(features::global_features());
+        self.global_private_features(features::global_private_features());
+        self
+    }
+
+    /// Configures the builder for building Qt Core
+    pub fn configure_for_qtcore_module(&mut self) -> &mut QtModuleBuilder {
+        self.module_defines(features::qt_core_defines());
+        self.module_features(features::qt_core_features());
+        self.module_private_features(features::qt_core_private_features());
+        self
+    }
+
     /// Builds the module using the current settings
     pub fn compile(&mut self) {
         // This function can be called either from a build.rs script or standalone,
@@ -452,23 +505,27 @@ impl QtModuleBuilder {
                 .opt_level(0);
         }
 
-        // Get build path, either OUT_DIR from cargo or build_dir.
-        let workspace_path = self.build_dir_.as_ref().unwrap().clone(); // TODO: OUT_DIR
+        // Get build path, either OUT_DIR from cargo or self.build_dir.
+        let build_path = self.build_dir_.as_ref().unwrap().clone(); // TODO: OUT_DIR
+                                                                    //println!("Build workspace {:?}", build_path);
 
-        // Write Qt configuration headers
-        let config_headers_path2 = workspace_path.join("config_headers");
-        let platformdefs_path = self.create_global_config_headears();
+        // Write configuration headers
+        let config_headers_path = build_path.join("config_headers");
+        //println!("Writing config headers to {:?}", config_headers_path);
+        self.create_config_headears(&config_headers_path);
 
-        // Write Qt forwarding headers
-        let forwarding_headers_path2 = workspace_path.join("forwarding_headers");
-        let forwarding_headers_path = self.create_module_forwarding_headers();
-        let _private_forwarding_heders_path = self.create_private_forwarding_headers();
+        // Write forwarding headers for all Qt headers. FIXME: currently
+        // this does not differentiate between _p.h and .h headers.
+        let forwarding_headers_path = build_path.join("forwarding_headers");
+        self.create_forwarding_headers(&forwarding_headers_path);
+        self.create_private_forwarding_headers(&forwarding_headers_path);
 
         // Add all include paths to build
         self.build
-            .include(platformdefs_path)
-            .include("module_includes")
-            .include(forwarding_headers_path);
+            .include(&config_headers_path)
+            .include(&config_headers_path.join(&self.module_name))
+            .include(&forwarding_headers_path)
+            .include(&forwarding_headers_path.join(&self.module_name));
 
         // Configure for c++17
         self.build.cpp(true).flag("-std=c++17");
@@ -484,43 +541,37 @@ mod features;
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use crate::features;
     use crate::QtModuleBuilder;
+    use std::path::PathBuf;
 
     #[test]
     fn build_qglobal() {
         // This test expects to find the Qt sources in the main vendored-qt workspace,
-        // which this crate should be a member of.
-        let qt_source: PathBuf = "../qt-src/".into();
-        let qt_build: PathBuf = "../qt-build/".into();
+        // which this crate should be a member of. The path would normally be "../qt-src".
+        // However, source file paths prefixed with "../" will make the CC crate output object
+        // files with paths containing "../", which may end up resolving to a location outside
+        // of the build directory. Side-step this by changing the current directory.
+        std::env::set_current_dir("../").expect("unable to set the current dir");
+        let qt_source: PathBuf = "qt-src/".into();
+
+        // Set up a temp dir for build artifacts
+        let temp = tempdir::TempDir::new("qt-cargo-base-test").expect("unable to create temp dir");
+        let qt_build = temp.path();
 
         // Use QtModuleBuilder to build qglobal.cpp from QtCore.
         QtModuleBuilder::new()
             .name("QtCore")
             .source_path(qt_source.join("qtbase/src/corelib"))
             .build_path(qt_build)
-            .qplatformdefs(qt_source.join("qtbase/mkspecs/linux-clang/qplatformdefs.h"))
-            // Set global Qt config
-            .global_defines(features::global_defines())
-            .global_features(features::global_features())
-            .global_private_features(features::global_private_features())
-            // Set QtCore config
-            .module_defines(features::qt_core_defines())
-            .module_features(features::qt_core_features())
-            .module_private_features(features::qt_core_private_features())
+            .configure_for_linux_target(&qt_source)
+            .configure_for_qtcore_module()
             // Add all headers, and one source file. Both paths are relative
             // to the source_path set above.
             .glob_headers(".")
             .source_file("global/qglobal.cpp")
-            // Find all headers. We need to:
-            // - create forwarding headers for <QtCore/foo.h> includes.
-            // - create forwarding headers for <private/foo_p.h> includes.
-            // - run moc on som/all headers. (TODO!)
-            // (this is actually done during the compile() step below)
             .compile();
 
         //  No panic? -> Test pass
+        // std::mem::forget(temp); // leak build config in tempp
     }
 }

@@ -178,7 +178,7 @@ pub fn qt_core_features() -> Vec<(&'static str, bool)> {
         ("std_atomic64", true),
         ("doubleconversion", true),
         ("eventfd", false),
-        ("glib", false),
+        ("glib", true),
         ("inotify", false),
         ("sharedmemory", true),
         ("systemsemaphore", true),
