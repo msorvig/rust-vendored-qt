@@ -25,11 +25,11 @@ Not so easy; at the wery least we need to provide configuration header files.
 
     cargo test
 
-The tests writes Qt configure and build artifacts in /tmp/, and should
+The tests writes Qt configure and build artifacts to /tmp/, and should
 not clobber the source dir.
 
 This project is organizes as a workspace. The qt-cargo-base crate contains
-the the majority of the source code. (Right now all of the source code).
+the the majority of the implementation. (Right now all of the implementaton).
 
 ## Getting started (for users of this crate)
 
