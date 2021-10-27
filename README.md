@@ -14,11 +14,16 @@ Not so easy; at the wery least we need to provide configuration header files.
 ## Getting started (for developers of this crate)
 
 1. Clone the rust-vendored-qt repository:
-        git clone https://github.com/msorvig/rust-vendored-qt
+
+    git clone https://github.com/msorvig/rust-vendored-qt
+
 2. Fetch Qt source code:
-        git submodule init
-3. Run the test suite
-        cargo test
+
+    git submodule init
+
+3. Run the test suite:
+
+    cargo test
 
 The tests writes Qt configure and build artifacts in /tmp/, and should
 not clobber the source dir.

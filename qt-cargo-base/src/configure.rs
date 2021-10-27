@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 // Qt configure implementation
 //
-// In-scope is anything needed to build Qt itself which has
+// In-scope is anything needed to build Qt, and which has
 // other dependencies than a C++ compiler and the Qt source
 // code itself. Building Qt applications is out of scope.
 //
