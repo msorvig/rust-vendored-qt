@@ -11,34 +11,24 @@ Can we just build the Qt sources directly?
 
 Not so easy; at the wery least we need to provide configuration header files.
 
-## Getting started
+## Getting started (for developers of this crate)
 
-The ambition is that including Qt should be as easy as adding e.g.
+1. Clone the rust-vendored-qt repository:
+        git clone https://github.com/msorvig/rust-vendored-qt
+2. Fetch Qt source code:
+        git submodule init
+3. Run the test suite
+        cargo test
 
-    qtcore = "6.2"
+The tests writes Qt configure and build artifacts in /tmp/, and should
+not clobber the source dir.
 
-to Cargo.toml; however currently some manual setup is required.
+This project is organizes as a workspace. The qt-cargo-base crate contains
+the the majority of the source code. (Right now all of the source code).
 
-1. Check out the Qt source code (currently qtbase only)
+## Getting started (for users of this crate)
 
-    git submodule init
-
-2. Create a build directory, which will be shared between all
-   modules for a given build:
-
-    qt-6.2-build
-
-3. Set environment variables pointing to the source and build dir
-
-    export QT_CARGO_SRC = /path/to/qt-6.2
-
-    export QT_CARGO_BUILD = /path/to/qt-6.2-build
-
-4. Build Qt:
-
-   cargo build
-
-   Or, open one of the sub-crates and build that crate directly.
+TODO! (but ideally as easy as adding e.g. "qtcore-src = 6.2" to Cargo.toml)
 
 ## Crates
 
@@ -51,8 +41,7 @@ Build system implementation
 
 Qt host tools crates (moc, rcc, uic, etc)
 
-    qtcore-host-tools-src
-    qtcore-host-tools-sys
+    qtcore-host-tools
 
 Qt library source crates
 
