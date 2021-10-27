@@ -19,7 +19,7 @@ Not so easy; at the wery least we need to provide configuration header files.
 
 2. Fetch Qt source code:
 
-    git submodule init
+    git submodule update --init --recursive
 
 3. Run the test suite:
 
