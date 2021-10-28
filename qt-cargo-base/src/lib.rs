@@ -25,7 +25,7 @@
 //!
 //! ```no_run
 //! fn main() {
-//!     qt_cargo::QtModuleBuilder::new()
+//!     qt_cargo_base::QtModuleBuilder::new()
 //!         .source_path("path/to/qt")
 //!         .build_path("/tmp/throwawaybuild")
 //!         .name("QtCore")
@@ -367,6 +367,12 @@ impl QtModuleBuilder {
         self
     }
 
+    pub fn define<'a, V: Into<Option<&'a str>>>(&mut self, var: &str, val: V) -> &mut QtModuleBuilder
+    {
+        self.build.define(var, val);
+        self
+    }
+
     pub fn default_global_features() -> Vec<(&'static str, bool)> {
         features::global_features()
     }
@@ -479,6 +485,29 @@ impl QtModuleBuilder {
     }
 }
 
+fn qt_src_path() -> PathBuf {
+    // Test and build scripts expects to find the Qt sources in the main vendored-qt workspace,
+    // which this crate should be a member of. The path would normally be "../qt-src".
+    // However, source file paths prefixed with "../" will make the CC crate output object
+    // files with paths containing "../", which may end up resolving to a location outside
+    // of the build directory. Side-step this by changing the current directory, if required.
+    // FIXME: less hacky
+    let current_cwd = std::env::current_dir().unwrap();
+    if !current_cwd.ends_with("rust-vendored-qt") {
+        std::env::set_current_dir("../").expect("unable to set the current dir");
+    }
+    let src_path: PathBuf = "qt-src/".into();
+    if !src_path.exists() {
+        panic!(
+            "Could not find Qt source code at {:?} cwd was {:?} is {:?}",
+            src_path,
+            current_cwd,
+            std::env::current_dir()
+        );
+    }
+    src_path
+}
+
 pub fn build_moc_with_module_builder(builder: &mut QtModuleBuilder) {
     let sources = vec![
         "collectjson.cpp",
@@ -502,38 +531,25 @@ pub fn build_moc_with_module_builder(builder: &mut QtModuleBuilder) {
         .glob_headers(".")
         .include(tinycbor_path)
         .sources("tools/moc", sources)
+        .define("main", "hiddenmain") // build.rs provides main()
         .compile();
+}
+
+pub fn build_moc_on_linux() {
+    let qt_source = qt_src_path();
+    build_moc_with_module_builder(
+        // FIXME: API
+        QtModuleBuilder::new()
+            .source_path(qt_source)
+            .configure_for_linux_target(),
+    );
 }
 
 mod features;
 
 #[cfg(test)]
 mod qt_cargo_base_tests {
-    use crate::{build_moc_with_module_builder, QtModuleBuilder};
-    use std::path::PathBuf;
-
-    fn qt_src_path() -> PathBuf {
-        // This test expects to find the Qt sources in the main vendored-qt workspace,
-        // which this crate should be a member of. The path would normally be "../qt-src".
-        // However, source file paths prefixed with "../" will make the CC crate output object
-        // files with paths containing "../", which may end up resolving to a location outside
-        // of the build directory. Side-step this by changing the current directory, if required.
-        // FIXME: less hacky
-        let current_cwd = std::env::current_dir().unwrap();
-        if !current_cwd.ends_with("rust-vendored-qt") {
-            std::env::set_current_dir("../").expect("unable to set the current dir");
-        }
-        let src_path: PathBuf = "qt-src/".into();
-        if !src_path.exists() {
-            panic!(
-                "Could not find Qt source code at {:?} cwd was {:?} is {:?}",
-                src_path,
-                current_cwd,
-                std::env::current_dir()
-            );
-        }
-        src_path
-    }
+    use crate::*;
 
     fn qt_build_temp_dir() -> tempdir::TempDir {
         // Set up a temp dir for build artifacts

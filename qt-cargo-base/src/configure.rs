@@ -2,7 +2,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
-use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 
 // Qt configure implementation
 //
@@ -179,6 +178,7 @@ where
     */
 }
 
+/// Writes a Qt configuarion header containg defines and features to the given path.
 pub fn write_config_header<P>(path: P, defines: &[(String, String)], features: &[(String, bool)])
 where
     P: AsRef<Path>,

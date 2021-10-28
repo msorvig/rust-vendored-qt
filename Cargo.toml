@@ -2,4 +2,5 @@
 
 members = [
     "qt-cargo-base",
+    "qtcore-host-tools",
 ]

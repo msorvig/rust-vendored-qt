@@ -1,0 +1,11 @@
+[package]
+name = "qtcore-host-tools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2.0"
+
+
+[build-dependencies]
+qt-cargo-base = { path = "../qt-cargo-base" }
