@@ -1,16 +1,16 @@
 [package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-name = "qt-cargo"
+name = "qt-cargo-base"
 version = "0.1.0"
 
 [dependencies]
-boyer-moore-magiclen = "0.2"
 pathdiff = "0.2"
 tempdir = "*"
 walkdir = "2.0"
 itertools = "0.9"
-num_cpus = "0.2"
+num_cpus = "1"
+rayon = "*"
 
 [dependencies.cc]
 features = ["parallel"]

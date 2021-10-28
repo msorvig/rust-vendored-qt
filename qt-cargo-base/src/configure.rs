@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
+use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 
 // Qt configure implementation
 //
@@ -161,11 +162,31 @@ where
 /// Writes class forwarding headers for all classes found in the provided headers.
 pub fn write_class_forwarding_headers<'a, P, V>(path: P, headers: V)
 where
-    P: AsRef<Path>,
-    V: IntoIterator<Item = &'a PathBuf>,
+    P: AsRef<Path> + Send + Sync,
+    V: IntoIterator<Item = &'a PathBuf> + Send,
 {
     std::fs::create_dir_all(&path).expect("Unable to create directory");
     for header_realative_path in headers.into_iter() {
         write_class_forwarding_header(&path, header_realative_path);
     }
+    /*
+        FIXME: enabling this causes build failures with missing headers
+        let heck = headers.into_iter().collect::<Vec<_>>();
+        heck.par_iter().for_each(|header| {
+            println!("{:?}", header);
+            write_class_forwarding_header(&path, header);
+        });
+    */
+}
+
+pub fn write_config_header<P>(path: P, defines: &[(String, String)], features: &[(String, bool)])
+where
+    P: AsRef<Path>,
+{
+    let qconfig_content = format!(
+        "{}\n{}",
+        make_define_string(defines),
+        make_feature_defines(features)
+    );
+    fs::write(path.as_ref(), qconfig_content).expect("Unable to write file");
 }
