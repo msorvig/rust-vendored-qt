@@ -1,7 +1,10 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
+
+use crate::{features, util};
 
 // Qt configure implementation
 //
@@ -20,6 +23,114 @@ use itertools::Itertools;
 //
 // This file implements "leaf" helper functions only, the driving
 // code is in lib.rs.
+
+// QtConfiguration contains Qt configuration, including a qplatformsefs.h path,
+// global defines and feaures, and QtCore defines and features (currently for
+// one module). An instance of the module can be passed to write_qt_configuration,
+// which will then write the Qt configuration files to disk. The confiuration is
+// independent of Qt source and and build location.
+
+#[derive(Default)]
+#[allow(dead_code)]
+pub struct QtConfiguration {
+    qplatformdefs_path: Option<PathBuf>,
+
+    global_features: Vec<(String, bool)>,
+    global_private_features: Vec<(String, bool)>,
+    global_defines: Vec<(String, String)>,
+
+    qtcore_features: Vec<(String, bool)>,
+    qtcore_private_features: Vec<(String, bool)>,
+    qtcore_defines: Vec<(String, String)>,
+}
+
+impl QtConfiguration {
+    #[allow(dead_code)]
+    pub fn new() -> QtConfiguration {
+        Default::default()
+    }
+}
+
+#[allow(dead_code)]
+pub fn set_default_configuration(qt_configuration: &mut QtConfiguration) {
+    qt_configuration.qplatformdefs_path = Some("qtbase/mkspecs/linux-clang/qplatformdefs.h".into()); // Hardcode linux-clang
+
+    qt_configuration.global_features = features::global_features()
+        .iter()
+        .map(|(a, b)| (a.to_string(), *b))
+        .collect();
+    qt_configuration.global_private_features = features::global_private_features()
+        .iter()
+        .map(|(a, b)| (a.to_string(), *b))
+        .collect();
+    qt_configuration.global_defines = features::global_defines()
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+
+    qt_configuration.qtcore_features = features::qt_core_features()
+        .iter()
+        .map(|(a, b)| (a.to_string(), *b))
+        .collect();
+    qt_configuration.qtcore_private_features = features::qt_core_private_features()
+        .iter()
+        .map(|(a, b)| (a.to_string(), *b))
+        .collect();
+    qt_configuration.qtcore_defines = features::qt_core_defines()
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+}
+
+#[allow(dead_code)]
+pub fn write_configuration<P, Q>(
+    qt_configuration: &QtConfiguration,
+    destination_path: P,
+    qt_source_path: Option<Q>,
+) where
+    P: AsRef<Path>,
+    Q: AsRef<Path>,
+{
+    let qtcore_path = destination_path.as_ref().join("QtCore");
+    let qtcore_private_path = qtcore_path.join("private");
+    std::fs::create_dir_all(&qtcore_private_path).expect("Unable to create Qt config directory");
+    std::fs::create_dir_all(&qtcore_private_path).expect("Unable to create Qt config directory");
+
+    // Write qplatformdefs_p.h forwarding header, if we have Qt source to point it to.
+    if let Some(path) = qt_source_path {
+        write_forwarding_header(
+            &qtcore_path,
+            path.as_ref()
+                .join(qt_configuration.qplatformdefs_path.as_ref().unwrap()),
+        );
+    };
+
+    // Write Qt global public config and features to QtCore/qconfig.h.
+    write_config_header(
+        qtcore_path.join("qconfig.h"),
+        &qt_configuration.global_defines,
+        &qt_configuration.global_features,
+    );
+
+    // Write Qt global private config features to QtCore/private/qconfig_p.h
+    write_config_header(
+        qtcore_private_path.join("qconfig_p.h"),
+        &Vec::new(),
+        &qt_configuration.global_private_features,
+    );
+
+    write_config_header(
+        qtcore_path.join("qtcore-config.h"),
+        &qt_configuration.qtcore_defines,
+        &qt_configuration.qtcore_features,
+    );
+
+    write_config_header(
+        qtcore_private_path.join("qtcore-config_p.h"),
+        &Vec::new(),
+        &qt_configuration.qtcore_private_features,
+    );
+}
 
 /// Creates a string containing #defines by concatenating (key, values) from the iteratable
 pub fn make_define_string<'a, F>(defines: F) -> String
@@ -98,6 +209,7 @@ where
 /// Writes forwarding headers which contain e.g. #include "../diff/path/to/real/header.h"
 /// The headers are written to the given path. Each header points back to the corrsponding
 /// header path in the headers iterable.
+#[allow(dead_code)]
 pub fn write_forwarding_headers<'a, P, V>(path: P, headers: V)
 where
     P: AsRef<Path>,
@@ -139,7 +251,7 @@ where
         .tuple_windows::<(_, _, _)>()
         .filter_map(|(elem, next, next_next)| {
             // Look for "class QFoo" and "class <some token> QFoo" and emit
-            // "QFoo". "some token" is typically a Q_CORE_EXPORT or similar.
+            // "QFoo". <some token> is typically a Q_CORE_EXPORT or similar.
             if elem == "class" {
                 if is_qt_class(next) {
                     Some(next)
@@ -159,6 +271,7 @@ where
 }
 
 /// Writes class forwarding headers for all classes found in the provided headers.
+#[allow(dead_code)]
 pub fn write_class_forwarding_headers<'a, P, V>(path: P, headers: V)
 where
     P: AsRef<Path> + Send + Sync,
@@ -189,4 +302,59 @@ where
         make_feature_defines(features)
     );
     fs::write(path.as_ref(), qconfig_content).expect("Unable to write file");
+}
+
+/// Writes forwarding headers for all headers (.h) files found in source_path
+/// to destination_path. This includes public headers and private headers (_p.h).
+/// Private headers are placed under the "private/" prefix in the destination
+/// path. Finally, class forwarding headers are
+pub fn write_all_forwarding_headers<P, Q>(source_path: P, destination_path: Q)
+where
+    P: AsRef<Path>,
+    Q: AsRef<Path>,
+{
+    let destination_private_path = destination_path.as_ref().join("private");
+    std::fs::create_dir_all(&destination_private_path).expect("Unable to create directory");
+
+    let header_paths = util::glob_files(source_path, OsStr::new("h"));
+    for header_path in header_paths {
+        let is_private = header_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .contains("_p.h");
+        if is_private {
+            write_forwarding_header(&destination_private_path, header_path);
+        } else {
+            write_forwarding_header(&destination_path, &header_path);
+            write_class_forwarding_header(&destination_path, &header_path)
+        }
+    }
+}
+
+#[cfg(test)]
+mod qt_cargo_base_configure_tests {
+    use std::fs::read_dir;
+
+    use super::*;
+
+    #[test]
+    fn test_write_configuration() {
+        let temp = tempdir::TempDir::new("qt-cargo-base-configure-test").unwrap();
+        let qt_path: Option<&str> = None;
+
+        let mut config = QtConfiguration::new();
+        set_default_configuration(&mut config);
+        write_configuration(&config, temp.path(), qt_path);
+    }
+
+    #[test]
+    fn test_write_forwarding_headers() {
+        let temp = tempdir::TempDir::new("qt-cargo-base-configure-test").unwrap();
+        let qt_path = util::qt_src_path();
+
+        write_all_forwarding_headers(qt_path.join("qtbase/src/corelib"), &temp);
+        let expected_file_count = 523; // for current Qt version and implementation; change as needed.
+        assert_eq!(read_dir(&temp).unwrap().count(), expected_file_count);
+    }
 }

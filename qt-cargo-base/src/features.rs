@@ -266,8 +266,3 @@ pub fn qt_core_defines() -> Vec<(&'static str, &'static str)> {
         ("QT_NO_INOTIFY", "1"),
     ]
 }
-
-#[allow(dead_code)]
-pub fn qt_core_private_defines() -> Vec<(&'static str, &'static str)> {
-    vec![]
-}
