@@ -4,7 +4,8 @@ extern "C" {
 }
 
 pub fn moc() {
-    let mut buf = std::ptr::null_mut();
+    let _test_args = vec!["moc", "afile.h"];
+    let buf = std::ptr::null_mut();
     unsafe {
         _Z6runMociPPc(0, buf);
     }

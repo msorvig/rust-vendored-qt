@@ -6,6 +6,13 @@ edition = "2021"
 [dependencies]
 libc = "0.2.0"
 
-
 [build-dependencies]
-qt-cargo-base = { path = "../qt-cargo-base" }
+qt-cargo-base = { path = "../qt-cargo-base"}
+cc = {version = "1.0", features = ["parallel"] }
+system-deps = "5.0"
+
+[package.metadata.system-deps]
+# The bootstrap library (used by moc) depends on pcre2. Assume it
+# is installed as a system library. We could instead use the pcre2-sys
+# crate; however that crate currently does not support libpcre2-16.
+libpcre2-16 = "*"

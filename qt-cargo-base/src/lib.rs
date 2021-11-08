@@ -19,13 +19,14 @@
 //! the Qt libraries in source or binary form. That license will typically be either
 //! the LGPL/GPL or the Qt Commercial license.
 //!
- 
+
 use std::{
     path::{Path, PathBuf},
     str::FromStr,
 };
 
 mod configure;
+pub mod sources;
 pub mod util;
 
 /// Configures the given cc::Build object for building Qt. qt_build_path can optionally
@@ -184,22 +185,46 @@ mod qt_cargo_base_tests {
 
         let mut builder = cc::Build::new();
         configure_qtcore_for_linux(&mut builder, Some(&qt_build), &qt_source);
-
-        let moc_path = qt_source.join("qtbase/src/tools/moc");
-        let moc_sources = vec![
-            "collectjson.cpp",
-            "generator.cpp",
-            "main.cpp",
-            "moc.cpp",
-            "parser.cpp",
-            "preprocessor.cpp",
-            "token.cpp",
-        ];
-        add_path_prefixed_files(&mut builder, moc_path, moc_sources);
+        add_path_prefixed_files(
+            &mut builder,
+            qt_source.join(crate::sources::MOC_PATH),
+            crate::sources::MOC_SOURCES,
+        );
 
         builder.include(qt_source.join("qtbase/src/3rdparty/tinycbor/src/"));
         builder.include(qt_source.join("qtbase/src/tools/shared"));
 
         builder.compile("moc"); // No panic -> test pass
+    }
+
+    #[test]
+    fn build_bootstrap_library() {
+        let qt_source = util::qt_src_path();
+        let temp = qt_build_temp_dir();
+        let qt_build = temp.path();
+
+        let mut builder = cc::Build::new();
+
+        configure_qtcore_for_linux(&mut builder, Some(&qt_build), &qt_source);
+        add_path_prefixed_files(
+            &mut builder,
+            qt_source.join(crate::sources::BOOTSTRAP_PATH),
+            crate::sources::BOOTSTRAP_SOURCES,
+        );
+
+        builder.define("HAVE_CONFIG_H", None);
+        builder.define("QT_VERSION_MAJOR", "6");
+        builder.define("QT_VERSION_MINOR", "2");
+        builder.define("QT_VERSION_PATCH", "0");
+        builder.define("QT_VERSION_STR", "\"6.2.0\"");
+        builder.define("QT_USE_QSTRINGBUILDER", None);
+        builder.define("QT_BOOTSTRAPPED", None);
+        builder.define("QT_NO_CAST_FROM_ASCII", None);
+        builder.define("QT_NO_CAST_TO_ASCII", None);
+        builder.define("QT_NO_FOREACH", None);
+
+        builder.include(qt_source.join("qtbase/src/3rdparty/tinycbor/src/"));
+
+        builder.compile("bootstrap"); // No panic -> test pass
     }
 }
