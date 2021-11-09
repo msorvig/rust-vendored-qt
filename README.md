@@ -1,7 +1,7 @@
 # Building Qt with Cargo
 
-Rust supports building C++ source code using the CC crate. Qt is implemented using C++.
-Can we just build the Qt sources directly?
+Rust supports building C++ source code using the CC crate. Can we just build the Qt
+sources directly?
 
     % clang++ qglobal.cpp
     qglobal.cpp:41:10: fatal error: 'qplatformdefs.h' file not found
@@ -9,7 +9,7 @@ Can we just build the Qt sources directly?
          ^~~~~~~~~~~~~~~~~
     1 error generated.
 
-Not so easy; at the wery least we need to provide configuration header files.
+Not so easy; at the very least we need to provide configuration header files.
 
 ## Getting started (for developers of this crate)
 
@@ -25,11 +25,11 @@ Not so easy; at the wery least we need to provide configuration header files.
 
     cargo test
 
-The tests writes Qt configure and build artifacts to /tmp/, and should
-not clobber the source dir.
+The tests write qt-configure and build artifacts to $TEMP. Cargo writes
+to to the default target/ directroy when building, as usual.
 
-This project is organizes as a workspace. The qt-cargo-base crate contains
-the the majority of the implementation. (Right now all of the implementaton).
+This project is organizes as a workspace, where the qt-cargo-base crate contains
+the the majority of the implementation.
 
 ## Getting started (for users of this crate)
 
